@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nexus Chat - ネクサスチャット</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        nexus: {
+                            primary: '#6366f1',
+                            dark: '#4f46e5',
+                            bubbleMy: '#e0e7ff',
+                            bubbleOther: '#ffffff',
+                            bgChat: '#0f172a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        button, label, input, a {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 h-screen flex flex-col font-sans text-slate-100 select-none">
+
+    <!-- App Container -->
+    <div id="app" class="flex-1 flex flex-col md:flex-row max-w-6xl w-full mx-auto shadow-2xl bg-slate-800 overflow-hidden md:my-4 md:rounded-2xl border border-slate-700">
+
+        <!-- Sidebar / Room & Chat Selector -->
+        <div id="sidebar" class="w-full md:w-80 bg-slate-900 border-r border-slate-700 flex flex-col z-20">
+            <!-- App Header & User Profile -->
+            <div class="p-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div id="user-avatar-container" class="w-12 h-12 bg-indigo-600 rounded-full flex items-center text-white justify-center font-bold text-lg shadow overflow-hidden border border-indigo-400">
+                        <span id="user-avatar-text">U</span>
+                    </div>
+                    <div>
+                        <h1 class="font-extrabold text-white text-base tracking-wide flex items-center space-x-1">
+                            <span>Nexus Chat</span>
+                            <span class="text-[10px] bg-indigo-500 text-white px-1.5 py-0.5 rounded">Pro</span>
+                        </h1>
+                        <p id="display-name" class="text-xs text-slate-400 truncate max-w-[120px]">ゲストユーザー</p>
+                    </div>
+                </div>
+                <button onclick="openSettings()" class="text-slate-400 hover:text-white p-3 transition"><i class="fa-solid fa-sliders text-lg"></i></button>
+            </div>
+
+            <!-- Mode Selector -->
+            <div class="p-3 bg-slate-800 border-b border-slate-700 flex space-x-2">
+                <button onclick="switchMode('private')" id="btn-mode-private" class="flex-1 py-2.5 text-xs font-bold rounded-xl bg-indigo-600 text-white shadow transition">ダイレクト(1:1)</button>
+                <button onclick="switchMode('group')" id="btn-mode-group" class="flex-1 py-2.5 text-xs font-bold rounded-xl bg-slate-700 text-slate-300 transition">スクール空間</button>
+            </div>
+
+            <!-- Connection & Room Panel -->
+            <div class="p-4 flex-1 overflow-y-auto space-y-4">
+                <!-- Private Chat Panel -->
+                <div id="panel-private" class="space-y-3">
+                    <h3 class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">ダイレクトトーク</h3>
+                    <p class="text-xs text-slate-400">4桁のシークレットコードで完全安全な1対1のP2P通信を確立します。</p>
+                    <div class="flex space-x-2">
+                        <input type="text" id="private-room-input" maxlength="4" placeholder="4桁コード" class="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-3 text-sm text-center tracking-widest font-bold text-white focus:outline-none focus:border-indigo-500" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <button onclick="joinPrivateRoom()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl text-sm font-semibold transition shadow">接続</button>
+                    </div>
+                </div>
+
+                <!-- Group Chat Panel -->
+                <div id="panel-group" class="space-y-3 hidden">
+                    <h3 class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">スクール空間 (グループ)</h3>
+                    <button onclick="createGroupRoom()" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3 px-4 rounded-xl shadow transition flex items-center justify-center space-x-2 text-sm">
+                        <i class="fa-solid fa-cube"></i><span>新ルームを発行</span>
+                    </button>
+                    <div class="flex space-x-2">
+                        <input type="text" id="group-room-input" maxlength="4" placeholder="4桁コード" class="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-3 text-sm text-center tracking-widest font-bold text-white focus:outline-none focus:border-indigo-500" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <button onclick="joinGroupRoom()" class="bg-slate-700 hover:bg-slate-600 text-white px-5 py-3 rounded-xl text-sm font-semibold transition">入室</button>
+                    </div>
+                </div>
+
+                <!-- 全会話ログ・履歴セクション -->
+                <div class="pt-4 border-t border-slate-800">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">全会話の記録 (ログ)</h3>
+                        <button onclick="openHistoryModal()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700 transition">全履歴を見る</button>
+                    </div>
+                    <p class="text-[11px] text-slate-400">これまでのすべての発言・スタンプがここに自動記録されます。</p>
+                </div>
+            </div>
+
+            <!-- Connection Status Footer -->
+            <div class="p-3 bg-slate-900 border-t border-slate-700 text-xs text-slate-400 flex justify-between items-center">
+                <span id="connection-status" class="flex items-center space-x-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span><span>未接続</span></span>
+                <span id="peer-count">接続ピア: 0</span>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div id="chat-area" class="flex-1 flex flex-col bg-slate-950 relative">
+            <!-- Chat Header -->
+            <div class="bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center justify-between shadow-sm z-10">
+                <div class="flex items-center space-x-3">
+                    <button onclick="toggleSidebar()" class="md:hidden text-slate-300 p-2 mr-1"><i class="fa-solid fa-bars text-xl"></i></button>
+                    <div class="w-10 h-10 bg-indigo-900 border border-indigo-500 rounded-xl flex items-center justify-center text-indigo-300 font-bold" id="chat-room-avatar">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div>
+                        <h2 id="chat-room-title" class="font-bold text-white text-sm">Nexusへようこそ</h2>
+                        <p id="chat-room-subtitle" class="text-xs text-slate-400">コードを入力してセッションを開始してください</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button onclick="openHistoryModal()" class="text-slate-400 hover:text-white p-2 transition" title="履歴"><i class="fa-solid fa-clock-rotate-left text-xl"></i></button>
+                    <button onclick="showRoomInfo()" class="text-slate-400 hover:text-white p-2 transition"><i class="fa-solid fa-circle-info text-xl"></i></button>
+                </div>
+            </div>
+
+            <!-- Messages Container -->
+            <div id="messages-container" class="flex-1 p-4 overflow-y-auto space-y-4">
+                <div class="text-center my-6">
+                    <div class="inline-block bg-indigo-950 border border-indigo-800 text-indigo-300 text-xs px-4 py-2.5 rounded-xl shadow">
+                        ⚡ グループ全員同期＆全会話自動記録システム対応
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Original Sticker Panel -->
+            <div id="sticker-panel" class="bg-slate-900 border-t border-slate-700 p-3 hidden grid grid-cols-2 sm:grid-cols-4 gap-2 shadow-2xl z-20">
+                <button onclick="sendSticker('✨ ノート完了！')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">✨ ノート完了！</button>
+                <button onclick="sendSticker('📚 宿題どこ？')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">📚 宿題どこ？</button>
+                <button onclick="sendSticker('💡 ひらめいた！')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">💡 ひらめいた！</button>
+                <button onclick="sendSticker('🚀 テストがんばろ')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">🚀 テストがんばろ</button>
+                <button onclick="sendSticker('☕ 休憩しよー')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">☕ 休憩しよー</button>
+                <button onclick="sendSticker('⭐ ありがとう！')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">⭐ ありがとう！</button>
+                <button onclick="sendSticker('🤝 よろしく！')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">🤝 よろしく！</button>
+                <button onclick="sendSticker('🔥 やる気MAX')" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-3 rounded-xl text-xs font-bold text-indigo-300 shadow transition">🔥 やる気MAX</button>
+            </div>
+
+            <!-- Input Bar -->
+            <div class="bg-slate-900 border-t border-slate-700 p-3 flex items-center space-x-2 z-10">
+                <button onclick="toggleStickerPanel()" class="text-slate-400 hover:text-white p-3 transition" title="オリジナルスタンプ">
+                    <i class="fa-solid fa-icons text-xl"></i>
+                </button>
+                <label class="cursor-pointer text-slate-400 hover:text-white p-3 transition" title="画像送信">
+                    <i class="fa-solid fa-image text-xl"></i>
+                    <input type="file" id="image-input" accept="image/*" class="hidden" onchange="sendImage(event)">
+                </label>
+                <div class="flex-1 relative">
+                    <input type="text" id="message-input" placeholder="メッセージを入力..." onkeypress="handleKeyPress(event)" class="w-full bg-slate-800 border border-slate-600 text-white rounded-full px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
+                </div>
+                <button onclick="sendMessage()" class="bg-indigo-600 hover:bg-indigo-500 text-white w-11 h-11 rounded-full flex items-center justify-center transition shadow flex-shrink-0">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-80 shadow-2xl space-y-4">
+            <h3 class="font-bold text-lg text-white">プロフィール設定</h3>
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">表示名</label>
+                <input type="text" id="settings-name-input" class="w-full bg-slate-800 border border-slate-600 text-white rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">アバター画像（任意）</label>
+                <input type="file" id="settings-avatar-input" accept="image/*" class="w-full text-xs text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500">
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button onclick="closeSettings()" class="px-4 py-2.5 text-sm text-slate-400 hover:bg-slate-800 rounded-xl transition">キャンセル</button>
+                <button onclick="saveSettings()" class="px-4 py-2.5 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 font-semibold transition shadow">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Log Modal -->
+    <div id="history-modal" class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg max-h-[80vh] shadow-2xl flex flex-col space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-lg text-white"><i class="fa-solid fa-clock-rotate-left mr-2 text-indigo-400"></i>全会話の記録 (アーカイブ)</h3>
+                <button onclick="closeHistoryModal()" class="text-slate-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div id="history-content-list" class="flex-1 overflow-y-auto space-y-3 pr-2">
+                <!-- 記録されたログがここに追加されます -->
+                <p class="text-xs text-slate-500 text-center py-6">まだ記録された会話はありません。</p>
+            </div>
+            <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+                <button onclick="clearAllHistory()" class="text-xs bg-red-950 text-red-300 hover:bg-red-900 px-3 py-2 rounded-xl transition border border-red-800">履歴をすべて消去</button>
+                <button onclick="closeHistoryModal()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 font-semibold transition shadow">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Application Logic -->
+    <script>
+        let myName = localStorage.getItem('nexus_my_name') || ('ユーザー_' + Math.floor(Math.random() * 1000));
+        let myAvatar = localStorage.getItem('nexus_my_avatar') || null;
+
+        let currentMode = 'private';
+        let currentRoomId = null;
+        let isHost = false;
+        
+        let peer = null;
+        let connections = {}; // peerId -> conn
+        let incomingBuffers = {}; 
+        let globalChatHistory = JSON.parse(localStorage.getItem('nexus_chat_history') || '[]');
+
+        window.onload = () => {
+            updateMyAvatarDisplay();
+            document.getElementById('settings-name-input').value = myName;
+        };
+
+        function updateMyAvatarDisplay() {
+            document.getElementById('display-name').innerText = myName;
+            const container = document.getElementById('user-avatar-container');
+            if (myAvatar) {
+                container.innerHTML = `<img src="${myAvatar}" class="w-full h-full object-cover">`;
+            } else {
+                container.innerHTML = `<span id="user-avatar-text">${myName.charAt(0)}</span>`;
+            }
+        }
+
+        function openSettings() {
+            document.getElementById('settings-name-input').value = myName;
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function openHistoryModal() {
+            renderHistoryList();
+            document.getElementById('history-modal').classList.remove('hidden');
+        }
+
+        function closeHistoryModal() {
+            document.getElementById('history-modal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            const nameInput = document.getElementById('settings-name-input').value.trim();
+            if (nameInput) {
+                myName = nameInput;
+                localStorage.setItem('nexus_my_name', myName);
+            }
+
+            const avatarFile = document.getElementById('settings-avatar-input').files[0];
+            if (avatarFile) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    myAvatar = e.target.result;
+                    localStorage.setItem('nexus_my_avatar', myAvatar);
+                    updateMyAvatarDisplay();
+                    closeSettings();
+                };
+                reader.readAsDataURL(avatarFile);
+            } else {
+                updateMyAvatarDisplay();
+                closeSettings();
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.style.display === 'flex' && window.innerWidth < 768) {
+                sidebar.style.display = 'none';
+            } else {
+                sidebar.style.display = 'flex';
+                sidebar.classList.remove('hidden');
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth >= 768) {
+                sidebar.style.display = 'flex';
+                sidebar.classList.remove('hidden');
+            } else {
+                sidebar.style.display = 'none';
+                sidebar.classList.add('hidden');
+            }
+        });
+
+        function toggleStickerPanel() {
+            const panel = document.getElementById('sticker-panel');
+            panel.classList.toggle('hidden');
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            const btnPrivate = document.getElementById('btn-mode-private');
+            const btnGroup = document.getElementById('btn-mode-group');
+            const panelPrivate = document.getElementById('panel-private');
+            const panelGroup = document.getElementById('panel-group');
+
+            if (mode === 'private') {
+                btnPrivate.className = "flex-1 py-2.5 text-xs font-bold rounded-xl bg-indigo-600 text-white shadow transition";
+                btnGroup.className = "flex-1 py-2.5 text-xs font-bold rounded-xl bg-slate-700 text-slate-300 transition";
+                panelPrivate.classList.remove('hidden');
+                panelGroup.classList.add('hidden');
+            } else {
+                btnGroup.className = "flex-1 py-2.5 text-xs font-bold rounded-xl bg-indigo-600 text-white shadow transition";
+                btnPrivate.className = "flex-1 py-2.5 text-xs font-bold rounded-xl bg-slate-700 text-slate-300 transition";
+                panelGroup.classList.remove('hidden');
+                panelPrivate.classList.add('hidden');
+            }
+        }
+
+        function joinPrivateRoom() {
+            const roomId = document.getElementById('private-room-input').value.trim();
+            if (roomId.length !== 4 || isNaN(roomId)) {
+                alert('4桁の数字コードを入力してください。');
+                return;
+            }
+            initRoom('ダイレクト', roomId);
+        }
+
+        function createGroupRoom() {
+            const random4Digits = Math.floor(1000 + Math.random() * 9000).toString();
+            document.getElementById('group-room-input').value = random4Digits;
+            initRoom('スクール空間', random4Digits);
+        }
+
+        function joinGroupRoom() {
+            const roomId = document.getElementById('group-room-input').value.trim();
+            if (roomId.length !== 4 || isNaN(roomId)) {
+                alert('4桁の数字コードを入力してください。');
+                return;
+            }
+            initRoom('スクール空間', roomId);
+        }
+
+        // ルーム初期化（中継ハブ方式対応）
+        function initRoom(modeName, roomId) {
+            if (peer) {
+                peer.destroy();
+            }
+            connections = {};
+            incomingBuffers = {};
+            currentRoomId = roomId;
+            isHost = false;
+
+            document.getElementById('chat-room-title').innerText = `${modeName} (コード: ${currentRoomId})`;
+            document.getElementById('chat-room-subtitle').innerText = '接続確立中...';
+            document.getElementById('connection-status').innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span><span>接続中</span>';
+
+            clearMessages();
+            appendSystemMessage(`ルーム [コード: ${currentRoomId}] へ接続しています...`);
+
+            const hostPeerId = `nexus_room_${roomId}_host`;
+            const myGuestId = `nexus_room_${roomId}_guest_${Math.random().toString(36).substring(2, 6)}`;
+
+            // ホストになれるか試す
+            peer = new Peer(hostPeerId);
+
+            peer.on('open', (id) => {
+                isHost = true;
+                document.getElementById('chat-room-subtitle').innerText = 'ホストとして運営中（参加者待受）';
+                appendSystemMessage('あなたがこのルームの「ホスト(中継ハブ)」になりました。');
+                document.getElementById('connection-status').innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span>ホスト稼働中</span>';
+                
+                peer.on('connection', (conn) => {
+                    setupHostConnection(conn);
+                });
+            });
+
+            peer.on('error', (err) => {
+                if (err.type === 'unavailable-id') {
+                    // すでにホストが居るので、ゲストとして参加
+                    peer.destroy();
+                    isHost = false;
+
+                    peer = new Peer(myGuestId);
+                    peer.on('open', () => {
+                        document.getElementById('chat-room-subtitle').innerText = 'ゲストとして接続完了';
+                        appendSystemMessage('ホストに接続しました。');
+                        const conn = peer.connect(hostPeerId);
+                        setupGuestConnection(conn);
+                    });
+
+                    peer.on('error', (subErr) => {
+                        console.error(subErr);
+                        document.getElementById('connection-status').innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span>エラー</span>';
+                        appendSystemMessage(`接続エラー: ${subErr.type}`);
+                    });
+                } else {
+                    console.error(err);
+                    document.getElementById('connection-status').innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span>エラー</span>';
+                    appendSystemMessage(`エラー: ${err.type}`);
+                }
+            });
+        }
+
+        // ホスト側：ゲストからの接続を受け付け、他のゲスト全員へ転送する（中継）
+        function setupHostConnection(conn) {
+            connections[conn.peer] = conn;
+
+            conn.on('open', () => {
+                document.getElementById('connection-status').innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span>接続済み (参加者あり)</span>';
+                appendSystemMessage('新しいメンバーが参加しました！');
+                updatePeerCount();
+            });
+
+            conn.on('close', () => {
+                delete connections[conn.peer];
+                appendSystemMessage('メンバーが退出しました');
+                updatePeerCount();
+            });
+
+            conn.on('data', (packet) => {
+                // ホストが受け取ったメッセージを、自分以外の全接続ピア（他のゲスト）に転送する
+                broadcastToOthers(packet, conn.peer);
+                handleDataPacket(packet);
+            });
+        }
+
+        // ゲスト側：ホストと接続し、メッセージを送受信する
+        function setupGuestConnection(conn) {
+            connections[conn.peer] = conn;
+
+            conn.on('open', () => {
+                document.getElementById('connection-status').innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span>接続済み</span>';
+                appendSystemMessage('ルームへの接続に成功しました！');
+                updatePeerCount();
+            });
+
+            conn.on('close', () => {
+                delete connections[conn.peer];
+                document.getElementById('connection-status').innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span><span>切断</span>';
+                appendSystemMessage('ホストとの接続が切れました');
+                updatePeerCount();
+            });
+
+            conn.on('data', (packet) => {
+                handleDataPacket(packet);
+            });
+        }
+
+        // ホストが自分以外のメンバーへパケットを転送する関数
+        function broadcastToOthers(packet, senderPeerId) {
+            Object.keys(connections).forEach(peerId => {
+                if (peerId !== senderPeerId) {
+                    const conn = connections[peerId];
+                    if (conn && conn.open) {
+                        conn.send(packet);
+                    }
+                }
+            });
+        }
+
+        // 全ピアへメッセージを送信する共通関数
+        function sendPayloadToAll(payloadObj) {
+            Object.keys(connections).forEach(peerId => {
+                const conn = connections[peerId];
+                if (conn && conn.open) {
+                    conn.send(payloadObj);
+                }
+            });
+        }
+
+        function handleDataPacket(packet) {
+            if (packet.type === 'chat') {
+                appendMessage(packet.senderName, packet.senderAvatar, packet.text, false, packet.timestamp, null, packet.isSticker, true);
+            } else if (packet.type === 'image_full') {
+                appendMessage(packet.senderName, packet.senderAvatar, '', false, packet.timestamp, packet.image, false, true);
+            }
+        }
+
+        function updatePeerCount() {
+            const count = Object.keys(connections).filter(id => connections[id].open).length;
+            document.getElementById('peer-count').innerText = `接続ピア: ${count}`;
+            if (count > 0) {
+                document.getElementById('chat-room-subtitle',).innerText = isHost ? `ホスト運営中 (参加者 ${count}名)` : `接続中 (同期完了)`;
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            appendMessage(myName, myAvatar, text, true, timestamp, null, false, true);
+            
+            const payload = {
+                type: 'chat',
+                senderName: myName,
+                senderAvatar: myAvatar,
+                text: text,
+                timestamp: timestamp,
+                isSticker: false
+            };
+
+            sendPayloadToAll(payload);
+            input.value = '';
+        }
+
+        function sendSticker(stickerText) {
+            toggleStickerPanel();
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            appendMessage(myName, myAvatar, stickerText, true, timestamp, null, true, true);
+
+            const payload = {
+                type: 'chat',
+                senderName: myName,
+                senderAvatar: myAvatar,
+                text: stickerText,
+                timestamp: timestamp,
+                isSticker: true
+            };
+
+            sendPayloadToAll(payload);
+        }
+
+        function sendImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const base64Image = e.target.result;
+                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                appendMessage(myName, myAvatar, '', true, timestamp, base64Image, false, true);
+
+                const payload = {
+                    type: 'image_full',
+                    senderName: myName,
+                    senderAvatar: myAvatar,
+                    timestamp: timestamp,
+                    image: base64Image
+                };
+
+                sendPayloadToAll(payload);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // メッセージ表示 ＆ 履歴への自動保存
+        function appendMessage(sender, senderAvatar, text, isMe, timestamp, image = null, isSticker = false, saveToLog = true) {
+            const container = document.getElementById('messages-container');
+            const messageRow = document.createElement('div');
+            messageRow.className = `flex items-end space-x-2 mb-3 ${isMe ? 'justify-end' : 'justify-start'}`;
+
+            let avatarHtml = '';
+            if (senderAvatar) {
+                avatarHtml = `<div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 shadow border border-indigo-500"><img src="${senderAvatar}" class="w-full h-full object-cover"></div>`;
+            } else {
+                const initial = sender ? sender.charAt(0) : 'U';
+                avatarHtml = `<div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 shadow">${initial}</div>`;
+            }
+
+            let contentHtml = '';
+            if (image) {
+                contentHtml += `<img src="${image}" class="max-w-xs rounded-xl mb-1 shadow border border-slate-700">`;
+            }
+            if (text) {
+                if (isSticker) {
+                    contentHtml += `<div class="text-sm font-bold py-1.5 px-3 bg-indigo-950 text-indigo-200 border border-indigo-700/50 rounded-xl shadow-inner">${escapeHtml(text)}</div>`;
+                } else {
+                    contentHtml += `<p class="text-sm text-slate-100">${escapeHtml(text)}</p>`;
+                }
+            }
+
+            if (isMe) {
+                messageRow.innerHTML = `
+                    <div class="flex items-end space-x-1 max-w-xs md:max-w-md">
+                        <span class="text-[10px] text-slate-400 self-end mb-1">${timestamp}</span>
+                        <div class="bg-indigo-600 text-white rounded-2xl px-4 py-2.5 shadow-md rounded-br-none">
+                            ${contentHtml}
+                        </div>
+                    </div>
+                    ${avatarHtml}
+                `;
+            } else {
+                messageRow.innerHTML = `
+                    ${avatarHtml}
+                    <div class="flex flex-col">
+                        <span class="text-xs text-slate-400 ml-1 mb-1">${escapeHtml(sender)}</span>
+                        <div class="flex items-end space-x-1 max-w-xs md:max-w-md">
+                            <div class="bg-slate-800 border border-slate-700 text-slate-100 rounded-2xl px-4 py-2.5 shadow-md rounded-bl-none">
+                                ${contentHtml}
+                            </div>
+                            <span class="text-[10px] text-slate-400 self-end mb-1">${timestamp}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.appendChild(messageRow);
+            container.scrollTop = container.scrollHeight;
+
+            // 会話履歴ログへの保存
+            if (saveToLog) {
+                globalChatHistory.push({
+                    sender: sender,
+                    senderAvatar: senderAvatar,
+                    text: text || (image ? '[画像]' : ''),
+                    timestamp: timestamp,
+                    room: currentRoomId || '未所属',
+                    date: new Date().toLocaleDateString()
+                });
+                // 最大200件まで保持
+                if (globalChatHistory.length > 200) {
+                    globalChatHistory.shift();
+                }
+                localStorage.setItem('nexus_chat_history', JSON.stringify(globalChatHistory));
+            }
+        }
+
+        function appendSystemMessage(text) {
+            const container = document.getElementById('messages-container');
+            const div = document.createElement('div');
+            div.className = 'text-center my-2';
+            div.innerHTML = `<span class="bg-slate-800 border border-slate-700 text-slate-400 text-xs px-3 py-1 rounded-full">${escapeHtml(text)}</span>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function clearMessages() {
+            document.getElementById('messages-container').innerHTML = '';
+        }
+
+        function renderHistoryList() {
+            const listContainer = document.getElementById('history-content-list');
+            if (globalChatHistory.length === 0) {
+                listContainer.innerHTML = `<p class="text-xs text-slate-500 text-center py-6">まだ記録された会話はありません。</p>`;
+                return;
+            }
+
+            listContainer.innerHTML = '';
+            // 新しい順に並び替え
+            const reversed = [...globalChatHistory].reverse();
+            reversed.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'bg-slate-800 border border-slate-700 rounded-xl p-3 space-y-1 text-xs';
+                div.innerHTML = `
+                    <div class="flex justify-between text-slate-400 text-[10px]">
+                        <span class="font-bold text-indigo-400">${escapeHtml(item.sender)}</span>
+                        <span>ルーム: ${escapeHtml(item.room)} | ${escapeHtml(item.date)} ${escapeHtml(item.timestamp)}</span>
+                    </div>
+                    <p class="text-slate-200 font-medium">${escapeHtml(item.text)}</p>
+                `;
+                listContainer.appendChild(div);
+            });
+        }
+
+        function clearAllHistory() {
+            if (confirm('すべての会話履歴を消去してもよろしいですか？')) {
+                globalChatHistory = [];
+                localStorage.removeItem('nexus_chat_history');
+                renderHistoryList();
+            }
+        }
+
+        function showRoomInfo() {
+            if (currentRoomId) {
+                alert(`Nexus Chat セッション情報\nコード: ${currentRoomId}\n役割: ${isHost ? 'ホスト(中継サーバー)' : 'ゲスト'}\n記録された総ログ数: ${globalChatHistory.length}件`);
+            } else {
+                alert('アクティブなセッションはありません。');
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>
